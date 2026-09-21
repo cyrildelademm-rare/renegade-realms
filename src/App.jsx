@@ -712,10 +712,11 @@ const handleAccountSubmit = async (event) => {
       email: accountEmail.trim(),
       password: accountPassword,
       options: {
-        data: {
-          name: accountName.trim(),
-        },
-      },
+  emailRedirectTo: window.location.origin,
+  data: {
+    name: accountName.trim(),
+  },
+},
     });
 
     if (error) {
