@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import PaystackPop from "@paystack/inline-js";
+import { supabase } from "./lib/supabase";
+
 import { createPortal } from "react-dom";
+
 import "./App.css";
 
 /* =========================================================
@@ -364,6 +368,19 @@ function App() {
 
   const [accountOpen, setAccountOpen] = useState(false);
   const [customer, setCustomer] = useState(null);
+  useEffect(() => {
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    setCustomer(session?.user ?? null);
+  });
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
+    setCustomer(session?.user ?? null);
+  });
+
+  return () => subscription.unsubscribe();
+}, []);
 const [accountName, setAccountName] = useState("");
 const [accountEmail, setAccountEmail] = useState(""); 
 const [accountPassword, setAccountPassword] = useState("");
@@ -604,6 +621,42 @@ setCartToast(null);
     );
   };
 
+  
+const handlePaystackPayment = (paymentEmail = null) => {
+  const email = paymentEmail?.trim() || customer?.email;
+
+  if (!email) {
+    setCheckoutOpen(false);
+    setAccountOpen(true);
+    return;
+  }
+
+  const paystack = new PaystackPop();
+
+  paystack.newTransaction({
+    key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+    email: email,
+    amount: Math.round(cartSubtotal * 100),
+    currency: "GHS",
+
+    onSuccess: (transaction) => {
+      console.log("Payment successful:", transaction.reference);
+
+      setCart([]);
+      setCheckoutOpen(false);
+
+      alert(
+        "Payment successful! Thank you for shopping with Renegade Realms."
+      );
+    },
+
+    onCancel: () => {
+      alert("Payment was cancelled.");
+    },
+  });
+};
+
+
   /* =======================================================
      NAVIGATION
   ======================================================= */
@@ -620,13 +673,7 @@ setCartToast(null);
 
     setActiveNav(null);
   };
-
-  /* =======================================================
-     ABOUT
-  ======================================================= */
-
- const openAbout = () => {
-  setAboutVideoPlaying(false);
+  const openAbout = () => {
   setAboutOpen(true);
   setActiveNav(null);
 };
@@ -637,18 +684,19 @@ const closeAbout = () => {
 };
 
 const enterRealm = () => {
-  closeAbout();
-  scrollToSection("about");
+  setAboutOpen(true);
+  setActiveNav(null);
 };
+const closeSearch = () => {
+  setSearchOpen(false);
+  setSearchQuery("");
+};
+
   /* =======================================================
-     SEARCH
+     ABOUT
   ======================================================= */
 
-  const closeSearch = () => {
-    setSearchOpen(false);
-    setSearchQuery("");
-  };
-  const handleAccountSubmit = (event) => {
+const handleAccountSubmit = async (event) => {
   event.preventDefault();
 
   if (!accountEmail.trim() || !accountPassword.trim()) {
@@ -659,21 +707,52 @@ const enterRealm = () => {
     return;
   }
 
-  const newCustomer = {
-    name: createAccount
-      ? accountName.trim()
-      : "RENEGADE CUSTOMER",
-    email: accountEmail.trim(),
-  };
+  if (createAccount) {
+    const { error } = await supabase.auth.signUp({
+      email: accountEmail.trim(),
+      password: accountPassword,
+      options: {
+        data: {
+          name: accountName.trim(),
+        },
+      },
+    });
 
-  setCustomer(newCustomer);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    alert(
+      "Account created! Please check your email to confirm your account."
+    );
+    return;
+  }
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email: accountEmail.trim(),
+    password: accountPassword,
+  });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  // Keep the signed-in email before clearing the form
+  const signedInEmail = accountEmail.trim();
 
   setAccountName("");
   setAccountEmail("");
   setAccountPassword("");
   setCreateAccount(false);
   setAccountOpen(false);
+
+  // Open Paystack using the email that just signed in
+  handlePaystackPayment(signedInEmail);
 };
+
+
 
   /* =======================================================
      EXPLORE IMAGE CURSOR INTERACTION
@@ -1810,9 +1889,18 @@ const enterRealm = () => {
             <button
               type="button"
               className="rr-social-button"
-              onClick={() => {
-                alert("Google sign-in will be connected here.");
-              }}
+              onClick={async () => {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin,
+    },
+  });
+
+  if (error) {
+    alert(error.message);
+  }
+}}
             >
               <span>G</span>
               CONTINUE WITH GOOGLE
@@ -2313,17 +2401,18 @@ const enterRealm = () => {
               </label>
 
               <button
-                type="button"
-                className="rr-checkout-signin-button"
-                onClick={() => {
-                  setCheckoutOpen(false);
-                  setAccountOpen(true);
-                }}
-              >
-                SIGN IN TO CHECKOUT
-                <ArrowUpRight />
-              </button>
-
+       
+  type="button"
+  className="rr-checkout-signin-button"
+  onClick={() => {
+    setCheckoutOpen(false);
+    setAccountOpen(true);
+  }}
+>
+  SIGN IN TO CHECKOUT
+  <ArrowUpRight />
+</button>         
+  
             </form>
 
           </div>
